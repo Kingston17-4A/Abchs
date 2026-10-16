@@ -1,0 +1,184 @@
+import pygame
+import sys
+
+# 初始化 Pygame
+pygame.init()
+
+# 遊戲視窗設定
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("超級馬里奧 - 基礎開發版")
+
+# 顏色定義 (RGB)
+SKY_BLUE = (107, 140, 255)
+MARIO_RED = (255, 0, 0)
+BRICK_BROWN = (200, 100, 40)
+GREEN = (0, 255, 0)
+
+# 遊戲時鐘
+clock = pygame.time.Clock()
+FPS = 60
+
+# 物理參數
+GRAVITY = 0.8
+
+# --- 類別定義 ---
+
+class Player(pygame.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        # 用一個紅色的矩形代替馬里奧（你可以之後換成圖片）
+        self.image = pygame.Surface((40, 60))
+        self.image.fill(MARIO_RED)
+        self.rect = self.image.get_rect()
+        self.rect.x = 100
+        self.rect.y = 400
+        
+        # 移動變數
+        self.change_x = 0
+        self.change_y = 0
+        self.jump_power = -15
+        self.is_jumping = False
+
+    def update(self, platforms):
+        # 計算重力
+        self.calc_grav()
+        
+        # 水平移動
+        self.rect.x += self.change_x
+        
+        # 水平碰撞檢測
+        block_hit_list = pygame.sprite.spritecollide(self, platforms, False)
+        for block in block_hit_list:
+            if self.change_x > 0:
+                self.rect.right = block.rect.left
+            elif self.change_x < 0:
+                self.rect.left = block.rect.right
+
+        # 垂直移動
+        self.rect.y += self.change_y
+        
+        # 垂直碰撞檢測
+        block_hit_list = pygame.sprite.spritecollide(self, platforms, False)
+        for block in block_hit_list:
+            if self.change_y > 0: # 往下掉時踩到東西
+                self.rect.bottom = block.rect.top
+                self.change_y = 0
+                self.is_jumping = False
+            elif self.change_y < 0: # 往上跳時撞到東西
+                self.rect.top = block.rect.bottom
+                self.change_y = 0
+
+    def calc_grav(self):
+        if self.change_y == 0:
+            self.change_y = 1
+        else:
+            self.change_y += GRAVITY
+
+    def jump(self):
+        # 只有當站在地上時才能跳
+        if not self.is_jumping:
+            self.change_y = self.jump_power
+            self.is_jumping = True
+
+    def go_left(self):
+        self.change_x = -6
+
+    def go_right(self):
+        self.change_x = 6
+
+    def stop(self):
+        self.change_x = 0
+
+
+class Platform(pygame.sprite.Sprite):
+    def __init__(self, x, y, width, height):
+        super().__init__()
+        self.image = pygame.Surface((width, height))
+        self.image.fill(BRICK_BROWN)
+        self.rect = self.image.get_rect()
+        self.rect.x = x
+        self.rect.y = y
+
+
+# --- 初始化遊戲物件 ---
+
+player = Player()
+active_sprite_list = pygame.sprite.Group()
+active_sprite_list.add(player)
+
+platform_list = pygame.sprite.Group()
+
+# 建立地板與磚塊 (x, y, 寬度, 高度)
+level_platforms = [
+    [0, 550, 1200, 50],     # 地板 (延伸到螢幕外)
+    [300, 400, 120, 40],    # 浮空磚塊 1
+    [500, 300, 160, 40],    # 浮空磚塊 2
+    [700, 400, 80, 40],     # 浮空磚塊 3
+    [950, 450, 100, 100]    # 水管形狀的障礙物
+]
+
+for plat in level_platforms:
+    block = Platform(plat[0], plat[1], plat[2], plat[3])
+    platform_list.add(block)
+    active_sprite_list.add(block)
+
+# 鏡頭捲軸偏移量
+camera_offset_x = 0
+
+# --- 遊戲主迴圈 ---
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+            
+        # 按鍵按下事件
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_LEFT:
+                player.go_left()
+            if event.key == pygame.K_RIGHT:
+                player.go_right()
+            if event.key == pygame.K_SPACE or event.key == pygame.K_UP:
+                player.jump()
+                
+        # 按鍵放開事件
+        if event.type == pygame.KEYUP:
+            if event.key == pygame.K_LEFT and player.change_x < 0:
+                player.stop()
+            if event.key == pygame.K_RIGHT and player.change_x > 0:
+                player.stop()
+
+    # 更新玩家物理狀態
+    player.update(platform_list)
+
+    # --- 橫向捲軸邏輯 (Camera Scroll) ---
+    # 當馬里奧走到螢幕右半邊時，地圖往左滾動
+    if player.rect.right >= 500:
+        diff = player.rect.right - 500
+        player.rect.right = 500
+        camera_offset_x += diff
+        for plat in platform_list:
+            plat.rect.x -= diff
+
+    # 當馬里奧走到螢幕左半邊時，地圖往右滾動
+    if player.rect.left <= 200:
+        diff = 200 - player.rect.left
+        player.rect.left = 200
+        camera_offset_x -= diff
+        for plat in platform_list:
+            plat.rect.x += diff
+
+    # --- 畫面繪製 ---
+    screen.fill(SKY_BLUE) # 畫上藍天背景
+    active_sprite_list.draw(screen) # 畫上所有角色與磚塊
+    
+    # 更新視窗
+    pygame.display.flip()
+    
+    # 控制幀率
+    clock.tick(FPS)
+
+pygame.quit()
+sys.exit()
